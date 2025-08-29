@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Boekjesteller</title>
+  <style>
+    :root{
+      --bg:#0b1020;--bg2:#0e1733;--card:rgba(255,255,255,0.08);--card-strong:rgba(255,255,255,0.12);
+      --text:#f4f6f8;--muted:#c9d1d9;--accent:#7ee787;--accent2:#58a6ff;--danger:#ff7b72;
+      --radius:20px;--shadow:0 14px 40px rgba(0,0,0,.35)
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;color:var(--text);
+      background:
+        radial-gradient(1200px 700px at 10% -10%, #162a5a 0%, transparent 60%),
+        radial-gradient(900px 600px at 120% 120%, #0f3b31 0%, transparent 60%),
+        linear-gradient(180deg,var(--bg2),var(--bg));
+    }
+
+    .wrap{max-width:1100px;margin:0 auto;padding:28px;display:grid;gap:28px}
+    header{display:flex;justify-content:space-between;align-items:center}
+    h1{margin:0;font-size:28px}
+
+    .btn{padding:12px 16px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:#1a263f;color:var(--text);cursor:pointer;font-weight:600}
+    .btn:hover{filter:brightness(1.1)}
+    .btn:active{transform:translateY(1px)}
+
+    /* plus/min-knoppen met ruimte links/rechts */
+    .count-row{display:grid;grid-template-columns:200px 1fr 200px;align-items:center;gap:32px}
+    .btn-circle{position:relative;display:grid;place-items:center;width:200px;height:200px;border-radius:999px;
+      background:radial-gradient(160px 160px at 50% 40%, rgba(255,255,255,.08), rgba(255,255,255,.02));
+      border:2px solid transparent;transition:transform .08s;cursor:pointer}
+    .btn-circle:before{content:"";position:absolute;inset:0;border-radius:inherit;padding:2px;
+      background:linear-gradient(135deg,var(--accent),var(--accent2));
+      -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+    .btn-circle.minus:before{background:linear-gradient(135deg,#ff7b72,#ffd33d)}
+    .btn-circle:active{transform:scale(.97)}
+    .btn-circle span{font-size:64px;font-weight:800}
+
+    .count-wrap{text-align:center}
+    .count-label{opacity:.8;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+    #count{font-size:clamp(72px,10vw,140px);font-weight:800;cursor:pointer;user-select:none;margin-top:6px;display:inline-block}
+
+    /* kleine, satisfyingly bounce bij +1 */
+    @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.08)}100%{transform:scale(1)}}
+    #count.pop{animation:pop 180ms cubic-bezier(.2,.8,.2,1)}
+
+    .row{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+    .time{font-size:34px;font-weight:700;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+
+    .card{background:var(--card);border:1px solid var(--card-strong);border-radius:var(--radius);box-shadow:var(--shadow);backdrop-filter:blur(8px);padding:24px}
+
+    .progress{height:12px;border-radius:999px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.12);overflow:hidden}
+    .progress>span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#9be49b);width:0%;transition:width .25s}
+
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    .stat{border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px}
+    .stat .k{font-size:12px;opacity:.85}.stat .v{font-size:22px;font-variant-numeric:tabular-nums;font-weight:700;margin-top:6px}
+
+    .inputs{display:grid;grid-template-columns:1fr max-content;gap:16px;row-gap:16px;align-items:end;margin-top:6px}
+    label{font-size:12px;opacity:.85}
+    input[type=number]{padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:var(--text)}
+
+    .chart-card{padding:14px}
+    canvas{width:100%;height:360px;display:block;border-radius:12px;background:rgba(255,255,255,0.04)}
+
+    /* Print */
+    @media print{body{background:#fff}.app{display:none}.print-summary{display:block!important;color:#111}}
+    .print-summary{display:none;padding:32px}
+    .print-summary h1{margin:0 0 6px 0;font-size:28px}
+    .summary-grid{display:grid;gap:10px;grid-template-columns:1fr 1fr;max-width:760px}
+    .summary-item{border:1px solid #e6e6e6;border-radius:10px;padding:12px 14px}
+    .summary-item .k{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#666}
+    .summary-item .v{font-size:20px;font-weight:700;margin-top:4px}
+
+    /* Confetti container */
+    .confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:9999}
+    .confetti i{position:absolute;width:8px;height:14px;opacity:.95;transform:translateY(-20px) rotate(0deg);will-change:transform}
+  </style>
+</head>
+<body>
+  <div class="wrap app" aria-live="polite">
+    <header>
+      <h1>Boekjesteller</h1>
+      <button id="exportBtn" class="btn">Exporteer als PDF</button>
+    </header>
+
+    <section class="card">
+      <div class="count-row">
+        <button id="decrement" class="btn-circle minus" aria-label="-1"><span>−1</span></button>
+        <div class="count-wrap">
+          <div class="count-label">Gemaakt</div>
+          <div id="count" title="Klik of druk spatie voor +1">0</div>
+        </div>
+        <button id="increment" class="btn-circle" aria-label="+1"><span>+1</span></button>
+      </div>
+
+      <div class="row" style="margin-top:18px">
+        <div id="time" class="time">00:00:00</div>
+        <button id="toggleTimer" class="btn">Start timer</button>
+        <button id="resetTimer" class="btn">Reset timer</button>
+        <button id="resetCount" class="btn">Reset teller</button>
+        <button id="resetAll" class="btn">Reset alles</button>
+      </div>
+
+      <div class="progress" style="margin-top:12px"><span id="progressFill"></span></div>
+
+      <div class="stats">
+        <div class="stat"><div class="k">Gem. tijd / boekje</div><div id="avg" class="v">—</div></div>
+        <div class="stat"><div class="k">Doel</div><div id="goalNow" class="v">0</div></div>
+        <div class="stat"><div class="k">Correcties</div><div id="corrections" class="v">0</div></div>
+      </div>
+
+      <div class="inputs">
+        <div>
+          <label for="startInput">Startwaarde</label>
+          <input id="startInput" type="number" min="0" step="1" placeholder="0" />
+        </div>
+        <button id="applyStart" class="btn">Zet startwaarde</button>
+      </div>
+      <div class="inputs">
+        <div>
+          <label for="goalInput">Doel (totaal aantal)</label>
+          <input id="goalInput" type="number" min="0" step="1" placeholder="100" />
+        </div>
+        <button id="applyGoal" class="btn">Zet doel</button>
+      </div>
+
+      <div style="opacity:.75;font-size:12px;margin-top:6px">
+        Sneltoetsen: ◀ ▶ = −/+ • <b>Spatie</b> = +1 • <b>T</b> start/pauze • <b>R</b> reset timer • <b>P</b> export • <b>Enter</b> zet doel
+      </div>
+    </section>
+
+    <section class="card chart-card" aria-label="Cumulatieve productie">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 8px 8px;color:var(--muted);font-size:12px">
+        <div>Cumulatieve productie (netto)</div>
+        <div id="chartMeta">—</div>
+      </div>
+      <canvas id="chart" width="960" height="360" aria-label="Grafiek cumulatief"></canvas>
+    </section>
+  </div>
+
+  <!-- Printable summary -->
+  <section class="print-summary">
+    <h1>Boekjesteller</h1>
+    <div class="summary-grid">
+      <div class="summary-item" style="grid-column:1/-1"><div class="k">Exportdatum</div><div id="printDate" class="v">—</div></div>
+      <div class="summary-item"><div class="k">Aantal boekjes</div><div id="printCount" class="v">—</div></div>
+      <div class="summary-item"><div class="k">Totale tijd</div><div id="printTime" class="v">—</div></div>
+      <div class="summary-item"><div class="k">Gem. tijd / boekje</div><div id="printAvg" class="v">—</div></div>
+      <div class="summary-item"><div class="k">Doel</div><div id="printGoal" class="v">—</div></div>
+      <div class="summary-item"><div class="k">Correcties</div><div id="printCorr" class="v">—</div></div>
+      <div class="summary-item" style="grid-column:1/-1"><div class="k">Grafiek</div><img id="printChart" alt="Grafiek" style="max-width:100%;border-radius:8px;margin-top:8px" /></div>
+    </div>
+  </section>
+
+  <div id="confetti" class="confetti" aria-hidden="true"></div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', ()=>{
+      const $=s=>document.querySelector(s);
+      const now=()=>Date.now();
+      const clamp=(n,min=0)=>n<min?min:n;
+      const fmtTime=(ms)=>{ms=Math.max(0,ms|0);const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return [h,m,sec].map(v=>String(v).padStart(2,'0')).join(':')};
+      const fmtDur=(ms)=>ms<=0?'—':(()=>{const s=Math.round(ms/1000);const m=Math.floor(s/60),r=s%60;return (m>0?m+'m ':'')+r+'s'})();
+      const fmtClock=(t)=>new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+
+      // Elements
+      const countEl=$('#count'); const decBtn=$('#decrement'); const incBtn=$('#increment');
+      const timeEl=$('#time'); const toggleBtn=$('#toggleTimer'); const resetTimerBtn=$('#resetTimer');
+      const resetCountBtn=$('#resetCount'); const resetAllBtn=$('#resetAll'); const exportBtn=$('#exportBtn');
+      const startInput=$('#startInput'); const applyStart=$('#applyStart'); const goalInput=$('#goalInput'); const applyGoal=$('#applyGoal');
+      const goalNow=$('#goalNow'); const progressFill=$('#progressFill'); const avgEl=$('#avg'); const corrEl=$('#corrections');
+      const chart=$('#chart'); const ctx=chart.getContext('2d'); const chartMeta=$('#chartMeta');
+      const confettiBox=$('#confetti');
+
+      // Storage keys
+      const LS={count:'gs_count',elapsed:'gs_elapsed',running:'gs_running',startISO:'gs_start',goal:'gs_goal',events:'gs_events',celebrated:'gs_celebrated',initial:'gs_initial'};
+
+      // State
+      let count=Number(localStorage.getItem(LS.count)||'0');
+      let elapsedMs=Number(localStorage.getItem(LS.elapsed)||'0');
+      let running=localStorage.getItem(LS.running)==='1';
+      let sessionStartISO=localStorage.getItem(LS.startISO)||'';
+      let goal=Number(localStorage.getItem(LS.goal)||'0');
+      let celebrated=localStorage.getItem(LS.celebrated)==='1';
+      let initialCount=Number(localStorage.getItem(LS.initial)||String(count||0));
+      let events=[]; try{events=JSON.parse(localStorage.getItem(LS.events)||'[]')}catch(_){events=[]}
+
+      let rafId=null,lastFrame=null;
+
+      function ensureSessionStart(){
+        if(!sessionStartISO) sessionStartISO=new Date().toISOString();
+        if(localStorage.getItem(LS.initial)==null){ initialCount=count; localStorage.setItem(LS.initial,String(initialCount)); }
+      }
+      function save(){
+        localStorage.setItem(LS.count,String(count));
+        localStorage.setItem(LS.elapsed,String(elapsedMs|0));
+        localStorage.setItem(LS.running,running?'1':'0');
+        if(sessionStartISO) localStorage.setItem(LS.startISO,sessionStartISO);
+        localStorage.setItem(LS.goal,String(goal|0));
+        localStorage.setItem(LS.events,JSON.stringify(events));
+        localStorage.setItem(LS.celebrated,celebrated?'1':'0');
+        localStorage.setItem(LS.initial,String(initialCount|0));
+      }
+
+      function bounceCount(){
+        countEl.classList.remove('pop'); void countEl.offsetWidth; countEl.classList.add('pop');
+      }
+
+      // Actions
+      function inc(){ ensureSessionStart(); count=clamp(count+1,0); events.push({t:now(),d:+1}); bounceCount(); checkGoal(); render(); save(); }
+      function dec(){ count=clamp(count-1,0); events.push({t:now(),d:-1}); render(); save(); }
+
+      function step(ts){ if(lastFrame==null) lastFrame=ts; const dt=ts-lastFrame; lastFrame=ts; if(running){ elapsedMs+=dt; timeEl.textContent=fmtTime(elapsedMs); } rafId=requestAnimationFrame(step); }
+      function startLoop(){ if(!rafId) rafId=requestAnimationFrame(step); }
+
+      function toggleTimer(){ running=!running; toggleBtn.textContent=running?'Pauzeer timer':'Start timer'; ensureSessionStart(); save(); }
+      function resetTimer(){ elapsedMs=0; running=false; toggleBtn.textContent='Start timer'; render(); save(); }
+      function resetCount(){ if(confirm('Teller terugzetten naar 0?')){ count=0; events=[]; celebrated=false; render(); save(); } }
+      function setStart(){ const v=Number(startInput.value||'0'); const delta=v-count; count=clamp(v,0); ensureSessionStart(); if(delta!==0) events.push({t:now(),d:delta}); if(localStorage.getItem(LS.initial)==null){ initialCount=v; } render(); save(); }
+      function setGoal(){ goal=clamp(Number(goalInput.value||'0'),0); celebrated=false; render(); save(); }
+      function checkGoal(){ if(goal>0 && count>=goal && !celebrated){ running=false; toggleBtn.textContent='Start timer'; celebrate(); celebrated=true; save(); } }
+
+      function render(){
+        countEl.textContent=String(count);
+        timeEl.textContent=fmtTime(elapsedMs);
+        goalNow.textContent=String(goal);
+        const pct=goal>0?Math.min(100,(count/goal)*100):0; progressFill.style.width=pct+'%';
+        corrEl.textContent=String(events.filter(e=>e.d<0).length);
+        avgEl.textContent = count>0 ? fmtDur(elapsedMs / count) : '—';
+        drawChart(); 
+      }
+
+      // Canvas helpers
+      function resizeCanvas(){ 
+        const dpr=Math.max(1, Math.floor(window.devicePixelRatio||1)); 
+        const r=chart.getBoundingClientRect(); 
+        chart.width=Math.round(r.width*dpr); 
+        chart.height=Math.round(r.height*dpr); 
+        ctx.setTransform(dpr,0,0,dpr,0,0);
+      }
+      function drawChart(mode='screen'){
+        resizeCanvas(); const W=chart.clientWidth, H=chart.clientHeight; ctx.clearRect(0,0,W,H);
+        const padding={l:70,r:32,t:34,b:56}; 
+        const isPrint=mode==='print'; 
+        const frameCol=isPrint?'#d1d5db':'rgba(255,255,255,0.12)'; 
+        const gridCol=isPrint?'#e5e7eb':'rgba(255,255,255,0.08)'; 
+        const textCol=isPrint?'#111827':'rgba(255,255,255,0.70)'; 
+        const tickCol=isPrint?'#6b7280':'rgba(255,255,255,0.55)';
+
+        // frame
+        ctx.strokeStyle=frameCol; ctx.strokeRect(padding.l,padding.t,W-padding.l-padding.r,H-padding.t-padding.b);
+
+        const nowT=now();
+        const firstT=(sessionStartISO? new Date(sessionStartISO).getTime() : null) ?? (events[0]?.t || nowT);
+        const lastEventT = events.length? events[events.length-1].t : firstT;
+        const lastT=Math.max(nowT, lastEventT);
+        const span=Math.max(1,lastT-firstT);
+
+        let y=initialCount||0; const pts=[{x:firstT,y}];
+        for(const ev of events){ if(ev.t<firstT) continue; y+=ev.d; pts.push({x:ev.t,y}); }
+        pts.push({x:nowT,y:count});
+        if(pts.length<2){ chartMeta.textContent='Nog geen data'; return; }
+
+        const yVals=pts.map(p=>p.y);
+        let minY=Math.min(0,...yVals), maxY=Math.max(1,...yVals);
+        const yRange=maxY-minY||1; const yTicks=6; const yStep=Math.max(1, Math.round(yRange/yTicks));
+        minY=Math.floor(minY/yStep)*yStep; maxY=Math.ceil(maxY/yStep)*yStep;
+
+        // grid + Y labels
+        ctx.strokeStyle=gridCol; ctx.fillStyle=tickCol; ctx.font='12px system-ui';
+        for(let v=minY; v<=maxY; v+=yStep){
+          const ypx = mapY(v);
+          ctx.beginPath(); ctx.moveTo(padding.l, ypx); ctx.lineTo(W-padding.r, ypx); ctx.stroke();
+          const s = String(v); ctx.fillText(s, padding.l-8-ctx.measureText(s).width, ypx+4);
+        }
+
+        // X ticks + labels
+        const xTicks=6; ctx.fillStyle=tickCol;
+        for(let i=0;i<=xTicks;i++){
+          const t = firstT + (span*i/xTicks);
+          const x = mapX(t);
+          ctx.beginPath(); ctx.moveTo(x,H-padding.b); ctx.lineTo(x,H-padding.b+4);
+          ctx.strokeStyle=isPrint? '#9ca3af':'rgba(255,255,255,0.18)'; ctx.stroke();
+          const isFirst=i===0, isLast=i===xTicks;
+          const label = isFirst? (fmtClock(firstT)) : (isLast? (fmtClock(lastT)+'  nu') : fmtClock(t));
+          const tw = ctx.measureText(label).width; ctx.fillStyle=tickCol; ctx.fillText(label, x - tw/2, H-12);
+        }
+
+        // axis titles
+        ctx.save(); ctx.fillStyle=textCol; ctx.font='12px system-ui';
+        ctx.fillText('Tijd', (W-32+70)/2 - ctx.measureText('Tijd').width/2, H-6);
+        ctx.translate(18, (H-56+34)/2); ctx.rotate(-Math.PI/2); ctx.fillText('Boekjes', 0,0); ctx.restore();
+
+        const minutes = Math.max(1, Math.round(span/60000)); chartMeta.textContent = `${minutes} min • totaal ${count}`;
+
+        // line
+        const grad=ctx.createLinearGradient(padding.l,0,W-padding.r,0); grad.addColorStop(0,'#7ee787'); grad.addColorStop(1,'#58a6ff');
+        ctx.strokeStyle=grad; ctx.lineWidth=3; ctx.lineJoin='round'; ctx.lineCap='round';
+        ctx.beginPath(); pts.forEach((p,i)=>{ const x=mapX(p.x), ypx=mapY(p.y); if(i===0) ctx.moveTo(x,ypx); else ctx.lineTo(x,ypx); }); ctx.stroke();
+
+        function mapX(t){ return padding.l + ((t-firstT)/span)*(W-padding.l-padding.r); }
+        function mapY(v){ const ySpan=(maxY-minY)||1; return (H-padding.b) - ((v-minY)/ySpan)*(H-padding.t-padding.b); }
+      }
+
+      // Confetti: trage, constante stroom 8s
+      function celebrate(){
+        const DURATION = 8000; // ms
+        const COLORS = ['#7ee787','#3fb950','#58a6ff','#f778ba','#ffab70','#ffd33d'];
+        const SHAPES = ['rect','circle','ribbon'];
+        confettiBox.innerHTML='';
+
+        function spawnFew(){
+          const n = 8 + Math.floor(Math.random()*6);
+          for(let i=0;i<n;i++){
+            const el=document.createElement('i');
+            const shape=SHAPES[(Math.random()*SHAPES.length)|0];
+            const color=COLORS[(Math.random()*COLORS.length)|0];
+            el.style.left=(Math.random()*100)+'%';
+            el.style.background=color;
+            if(shape==='circle'){ el.style.borderRadius='50%'; el.style.width='10px'; el.style.height='10px'; }
+            else if(shape==='ribbon'){ el.style.width='6px'; el.style.height='18px'; el.style.borderRadius='6px'; }
+            confettiBox.appendChild(el);
+
+            const drift=(Math.random()*2-1)*40; // rustiger zijwaarts
+            const spin = 180 + Math.random()*360; // langzamer
+            const fall = window.innerHeight + 80;
+            const startY = -20 - Math.random()*60;
+            const duration = 3500 + Math.random()*2200; // trager dwarrelen
+            const delay = Math.random()*120;
+
+            el.animate([
+              { transform:`translate(${drift*0.2}px, ${startY}px) rotate(0deg)`, opacity:1 },
+              { transform:`translate(${drift}px, ${fall}px) rotate(${spin}deg)`,   opacity:0.9 }
+            ], { duration, delay, easing:'cubic-bezier(.25,.55,.2,1)', fill:'forwards' });
+
+            setTimeout(()=> el.remove(), duration+delay+600);
+          }
+        }
+
+        const interval = setInterval(spawnFew, 120);
+        spawnFew(); // meteen
+        setTimeout(()=>{ clearInterval(interval); setTimeout(()=> confettiBox.innerHTML='', 1500); }, DURATION);
+      }
+
+      // Print
+      function populatePrint(){
+        drawChart('print');
+        const d=new Date(); document.getElementById('printDate').textContent=d.toLocaleString();
+        document.getElementById('printCount').textContent=String(count);
+        document.getElementById('printTime').textContent=fmtTime(elapsedMs);
+        document.getElementById('printGoal').textContent=goal>0?String(goal):'—';
+        document.getElementById('printCorr').textContent=String(events.filter(e=>e.d<0).length);
+        document.getElementById('printAvg').textContent=count>0?fmtDur(elapsedMs/count):'—';
+        document.getElementById('printChart').src = chart.toDataURL('image/png');
+      }
+      async function exportPDF(){
+        if(!sessionStartISO && events.length){ sessionStartISO=new Date(events[0].t).toISOString(); }
+        populatePrint();
+        await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+        await new Promise(r=>setTimeout(r,50));
+        window.print();
+      }
+
+      // Wire-up
+      incBtn.addEventListener('click', inc);
+      decBtn.addEventListener('click', dec);
+      countEl.addEventListener('click', inc);
+      toggleBtn.addEventListener('click', toggleTimer);
+      resetTimerBtn.addEventListener('click', resetTimer);
+      resetCountBtn.addEventListener('click', resetCount);
+      applyStart.addEventListener('click', setStart);
+      applyGoal.addEventListener('click', setGoal);
+      // Enter-to-set-goal
+      goalInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); setGoal(); } });
+      // Enter-to-set-start  (← enige toevoeging)
+      startInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); setStart(); } });
+      exportBtn.addEventListener('click', exportPDF);
+      resetAllBtn.addEventListener('click', ()=>{
+        if(confirm('Weet je het zeker? Dit wist teller, timer, doel en alle events.')){
+          localStorage.clear();
+          count=0; elapsedMs=0; running=false; sessionStartISO=''; goal=0; celebrated=false; initialCount=0; events=[];
+          startInput.value='0'; goalInput.value='';
+          render(); save();
+        }
+      });
+
+      window.addEventListener('keydown',(e)=>{
+        if(e.key==='ArrowRight') inc();
+        else if(e.key==='ArrowLeft') dec();
+        else if(e.code==='Space'){ e.preventDefault(); inc(); }
+        else if(e.key==='t'||e.key==='T'){ toggleTimer(); }
+        else if(e.key==='r'||e.key==='R'){ resetTimer(); }
+        else if(e.key==='p'||e.key==='P'){ exportPDF(); }
+      });
+      window.addEventListener('beforeprint', ()=>{ populatePrint(); });
+
+      // Init
+      function boot(){ 
+        if(goal>0) goalInput.value=String(goal); 
+        startInput.value=String(count); 
+        render(); 
+        if(!rafId) requestAnimationFrame(step); 
+        checkGoal(); 
+        setInterval(save,2000); 
+      }
+      boot();
+    });
+  </script>
+</body>
+</html>
