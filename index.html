@@ -349,22 +349,50 @@
 
       // Print
       function populatePrint(){
-        drawChart('print');
-        const d=new Date(); document.getElementById('printDate').textContent=d.toLocaleString();
-        document.getElementById('printCount').textContent=String(count);
-        document.getElementById('printTime').textContent=fmtTime(elapsedMs);
-        document.getElementById('printGoal').textContent=goal>0?String(goal):'—';
-        document.getElementById('printCorr').textContent=String(events.filter(e=>e.d<0).length);
-        document.getElementById('printAvg').textContent=count>0?fmtDur(elapsedMs/count):'—';
-        document.getElementById('printChart').src = chart.toDataURL('image/png');
-      }
+  // Teken in print-modus (donkere assen/labels op wit)
+  drawChart('print');
+
+  // Zet de cijfers
+  const d = new Date();
+  document.getElementById('printDate').textContent = d.toLocaleString();
+  document.getElementById('printCount').textContent = String(count);
+  document.getElementById('printTime').textContent  = fmtTime(elapsedMs);
+  document.getElementById('printGoal').textContent  = goal>0 ? String(goal) : '—';
+  document.getElementById('printCorr').textContent  = String(events.filter(e=>e.d<0).length);
+  document.getElementById('printAvg').textContent   = count>0 ? fmtDur(elapsedMs/count) : '—';
+
+  // Vang de canvas als afbeelding (pas NA drawChart)
+  const imgEl = document.getElementById('printChart');
+  imgEl.src = document.getElementById('chart').toDataURL('image/png');
+}
+
       async function exportPDF(){
-        if(!sessionStartISO && events.length){ sessionStartISO=new Date(events[0].t).toISOString(); }
-        populatePrint();
-        await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-        await new Promise(r=>setTimeout(r,50));
-        window.print();
-      }
+  // Als er events zijn zonder start, zet dan de sessiestart naar eerste event
+  if(!sessionStartISO && events.length){
+    sessionStartISO = new Date(events[0].t).toISOString();
+  }
+
+  // Vul de print-sectie en teken grafiek in print-stijl
+  populatePrint();
+
+  // Wacht tot layout/paint klaar is
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  // Wacht tot de afbeelding van de grafiek geladen is (belangrijk voor GitHub Pages)
+  const img = document.getElementById('printChart');
+  await new Promise(resolve => {
+    if (!img || !img.src) return resolve();
+    if (img.complete) return resolve();
+    img.addEventListener('load', resolve, { once: true });
+    img.addEventListener('error', resolve, { once: true });
+  });
+
+  // Mini buffer voor trage engines (iOS/Safari)
+  await new Promise(r => setTimeout(r, 50));
+
+  window.print();
+}
+
 
       // Wire-up
       incBtn.addEventListener('click', inc);
